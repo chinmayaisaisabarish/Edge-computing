@@ -1,8 +1,6 @@
 package org.fog.healthsim;
 
 import org.cloudbus.cloudsim.Storage;
-
-
 import org.cloudbus.cloudsim.Log;
 import org.cloudbus.cloudsim.core.CloudSim;
 import org.fog.application.*;
@@ -22,105 +20,161 @@ import org.cloudbus.cloudsim.sdn.overbooking.PeProvisionerOverbooking;
 import org.cloudbus.cloudsim.Pe;
 
 import java.util.*;
+import java.text.DecimalFormat;
 
+/**
+ * Smart Home Temperature Monitoring System with Energy & Latency Analysis
+ * 
+ * PROBLEM STATEMENT:
+ * 1. Create a topology with Cloud, Fog and Edge nodes
+ * 2. Add temperature sensors and actuators for Smart Home Temperature
+ * Monitoring
+ * 3. Generate alert message when temperature is more than 30 degrees
+ * 4. Calculate the energy consumption
+ * 5. Find the latency for different processing paths
+ * 6. Generate comprehensive energy consumption and latency report
+ * 
+ * SOLUTION ARCHITECTURE:
+ * - Cloud: Central data processing and long-term storage
+ * - Fog Node: Local gateway for data aggregation and processing
+ * - Edge Device: Smart thermostat with temperature sensor
+ * - Temperature Sensor: Monitors room temperature (18-35°C range)
+ * - Actuator: Controls HVAC system and generates alerts
+ * 
+ * FEATURES:
+ * - Real-time temperature monitoring
+ * - Alert generation for temperatures > 30°C
+ * - Energy consumption tracking for each device
+ * - Latency measurement for different processing paths
+ * - Comprehensive reporting system
+ */
 public class HealthMonitoringSim {
 
     private static List<FogDevice> fogDevices = new ArrayList<>();
     private static List<Sensor> sensors = new ArrayList<>();
     private static List<Actuator> actuators = new ArrayList<>();
+    private static int alertCount = 0;
+    private static int totalReadings = 0;
 
     public static void main(String[] args) throws Exception {
-        Log.printLine("Starting HealthMonitoringSim...");
+        Log.printLine("=== Starting Smart Home Temperature Monitoring System ===");
 
         // 1) Initialize CloudSim
         CloudSim.init(1, Calendar.getInstance(), false);
 
-        // 2) Create broker
-        FogBroker broker = new FogBroker("broker");
-        String appId = "health_app";
+        // 2) Create broker for Smart Home system
+        FogBroker broker = new FogBroker("smart-home-broker");
+        String appId = "temperature_monitoring_app";
 
-        // 3) Create cloud (root node)
-        FogDevice cloud = createFogDevice("cloud", 44800, 40000,
+        // 3) Create Cloud Node (Central Data Center)
+        FogDevice cloud = createFogDevice("Cloud-DataCenter", 44800, 40000,
                 100000, 100000, 0, 0.01, 107.339, 83.4333);
         cloud.setParentId(-1);
         fogDevices.add(cloud);
+        Log.printLine("✓ Cloud Node created: " + cloud.getName());
 
-        // 4) Create hospital server (fog node)
-        FogDevice hospital = createFogDevice("hospital-server", 8000, 16384,
+        // 4) Create Fog Node (Home Gateway/Router)
+        FogDevice homeGateway = createFogDevice("Home-Gateway", 8000, 16384,
                 10000, 10000, 1, 0.01, 200, 20);
-        hospital.setParentId(cloud.getId());
-        hospital.setUplinkLatency(50.0); // latency hospital → cloud
-        fogDevices.add(hospital);
+        homeGateway.setParentId(cloud.getId());
+        homeGateway.setUplinkLatency(50.0); // latency home gateway → cloud
+        fogDevices.add(homeGateway);
+        Log.printLine("✓ Fog Node created: " + homeGateway.getName());
 
-        // 5) Create smartphone (edge device)
-        FogDevice phone = createFogDevice("smartphone", 1500, 2048,
+        // 5) Create Edge Device (Smart Thermostat)
+        FogDevice smartThermostat = createFogDevice("Smart-Thermostat", 1500, 2048,
                 10000, 10000, 2, 0.0, 87.53, 82.44);
-        phone.setParentId(hospital.getId());
-        phone.setUplinkLatency(10.0); // latency phone → hospital
-        fogDevices.add(phone);
+        smartThermostat.setParentId(homeGateway.getId());
+        smartThermostat.setUplinkLatency(10.0); // latency thermostat → gateway
+        fogDevices.add(smartThermostat);
+        Log.printLine("✓ Edge Node created: " + smartThermostat.getName());
 
-     // 6) Create heart rate sensor with random HR values
-        Sensor hr = new Sensor("s-hr-1", "HEART_RATE", broker.getId(), appId,
-                new DeterministicDistribution(1.0)) {
+        // 6) Create Temperature Sensor with realistic temperature values
+        Sensor temperatureSensor = new Sensor("temp-sensor-1", "TEMPERATURE", broker.getId(), appId,
+                new DeterministicDistribution(2.0)) { // Reading every 2 seconds
 
             private Random rand = new Random();
 
             @Override
             protected void updateSensor() {
-                int hrValue = 60 + rand.nextInt(80); // HR between 60–139
-                System.out.println("Generated HR Value: " + hrValue);
+                totalReadings++;
+                // Generate realistic temperature values (18°C to 35°C)
+                double temperature = 18.0 + (rand.nextDouble() * 17.0); // 18-35°C range
+                temperature = Math.round(temperature * 10.0) / 10.0; // Round to 1 decimal
 
-                // Create a tuple manually with HR value
-                Tuple tuple = new Tuple(getAppId(), getUserId(), getId(), "HEART_RATE", new HashMap<String, Object>());
-                tuple.getTuplePayload().put("HR", hrValue);
+                System.out.printf("🌡️  Temperature Reading #%d: %.1f°C%n", totalReadings, temperature);
 
-                // Trigger alert if HR > 100
-                if(hrValue > 100){
-                    System.out.println("ALERT! Heart Rate too high: " + hrValue + " bpm");
-                    tuple.getTuplePayload().put("ALERT", true); // optional, mark in tuple
+                // Create tuple with temperature data
+                Tuple tuple = new Tuple(getAppId(), getUserId(), getId(), "TEMPERATURE", new HashMap<String, Object>());
+                tuple.getTuplePayload().put("TEMPERATURE", temperature);
+                tuple.getTuplePayload().put("TIMESTAMP", System.currentTimeMillis());
+
+                // Check for high temperature alert (>30°C)
+                if (temperature > 30.0) {
+                    alertCount++;
+                    System.out.printf("🚨 HIGH TEMPERATURE ALERT! Temperature: %.1f°C (Alert #%d)%n",
+                            temperature, alertCount);
+                    tuple.getTuplePayload().put("ALERT", true);
+                    tuple.getTuplePayload().put("ALERT_LEVEL", "HIGH");
+                } else {
+                    tuple.getTuplePayload().put("ALERT", false);
+                    tuple.getTuplePayload().put("ALERT_LEVEL", "NORMAL");
                 }
 
-                // Send tuple to the gateway device
+                // Send tuple to gateway device (Smart Thermostat)
                 send(getGatewayDeviceId(), getLatency(), tuple);
 
-                // Schedule next sensor update
+                // Schedule next sensor reading
                 schedule(getId(), getTransmitDistribution().getNextSample(), FogEvents.SENSOR_UPDATE);
             }
         };
 
+        temperatureSensor.setGatewayDeviceId(smartThermostat.getId());
+        temperatureSensor.setLatency(1.0); // sensor → thermostat
+        sensors.add(temperatureSensor);
+        Log.printLine("✓ Temperature Sensor created and configured");
 
-        hr.setGatewayDeviceId(phone.getId());
-        hr.setLatency(2.0); // wearable → phone
-        sensors.add(hr);
+        // 7) Create HVAC Control Actuator
+        Actuator hvacController = new Actuator("hvac-controller-1", broker.getId(), appId, "HVAC_CONTROL");
+        hvacController.setGatewayDeviceId(homeGateway.getId());
+        hvacController.setLatency(1.5);
+        actuators.add(hvacController);
+        Log.printLine("✓ HVAC Controller Actuator created");
 
+        // 8) Create Alert Notification Actuator
+        Actuator alertNotifier = new Actuator("alert-notifier-1", broker.getId(), appId, "ALERT_NOTIFICATION");
+        alertNotifier.setGatewayDeviceId(homeGateway.getId());
+        alertNotifier.setLatency(0.5);
+        actuators.add(alertNotifier);
+        Log.printLine("✓ Alert Notification Actuator created");
 
-        // 7) Create actuator (doctor alert)
-        Actuator alert = new Actuator("a-alert-1", broker.getId(), appId, "ALERT");
-        alert.setGatewayDeviceId(hospital.getId());
-        alert.setLatency(1.0);
-        actuators.add(alert);
+        // 9) Create Smart Home Temperature Monitoring Application DAG
+        Application app = createTemperatureMonitoringApp(appId, broker.getId());
+        Log.printLine("✓ Application DAG created with modules and edges");
 
-        // 8) Create application DAG
-        Application app = createHealthApp(appId, broker.getId());
-
-        // 9) Map modules to devices
+        // 10) Map application modules to fog devices
         ModuleMapping mapping = ModuleMapping.createModuleMapping();
-        mapping.addModuleToDevice("edgeProcessor", "smartphone");
-        mapping.addModuleToDevice("logger", "smartphone");
-        mapping.addModuleToDevice("fogAnalyzer", "hospital-server");
+        mapping.addModuleToDevice("TemperatureProcessor", "Smart-Thermostat"); // Edge processing
+        mapping.addModuleToDevice("LocalLogger", "Smart-Thermostat"); // Local logging
+        mapping.addModuleToDevice("AlertManager", "Home-Gateway"); // Fog-level alert management
+        mapping.addModuleToDevice("DataAggregator", "Home-Gateway"); // Fog-level data aggregation
+        mapping.addModuleToDevice("CloudAnalyzer", "Cloud-DataCenter"); // Cloud analytics
+        Log.printLine("✓ Module mapping configured");
 
-        Controller controller = new Controller("master-controller", fogDevices, sensors, actuators);
+        // 11) Create controller and submit application
+        Controller controller = new Controller("smart-home-controller", fogDevices, sensors, actuators);
         controller.submitApplication(app,
                 new ModulePlacementEdgewards(fogDevices, sensors, actuators, app, mapping));
 
+        Log.printLine("\n🚀 Starting Smart Home Temperature Monitoring Simulation...");
         // Start simulation
         CloudSim.startSimulation();
         CloudSim.stopSimulation();
 
-        // 10) Print report
-        printReport(app);
+        // 12) Generate comprehensive report
+        printComprehensiveReport(app);
 
-        Log.printLine("HealthMonitoringSim finished!");
+        Log.printLine("=== Smart Home Temperature Monitoring System Completed ===");
     }
 
     private static Application createHealthApp(String appId, int userId) {
@@ -149,18 +203,16 @@ public class HealthMonitoringSim {
 
         // Loops for latency measurement
         app.setLoops(Arrays.asList(
-            new AppLoop(Arrays.asList("edgeProcessor", "logger")),
-            new AppLoop(Arrays.asList("edgeProcessor", "fogAnalyzer"))
-        ));
+                new AppLoop(Arrays.asList("edgeProcessor", "logger")),
+                new AppLoop(Arrays.asList("edgeProcessor", "fogAnalyzer"))));
 
         return app;
     }
 
-
     private static FogDevice createFogDevice(String name, long mips, int ram,
-                                             long upBw, long downBw, int level,
-                                             double ratePerMips,
-                                             double busyPower, double idlePower) throws Exception {
+            long upBw, long downBw, int level,
+            double ratePerMips,
+            double busyPower, double idlePower) throws Exception {
         List<Pe> peList = new ArrayList<>();
         peList.add(new Pe(0, new PeProvisionerOverbooking(mips)));
 
@@ -175,8 +227,7 @@ public class HealthMonitoringSim {
                 storage,
                 peList,
                 new StreamOperatorScheduler(peList),
-                new FogLinearPowerModel(busyPower, idlePower)
-        );
+                new FogLinearPowerModel(busyPower, idlePower));
 
         List<PowerHost> hostList = new ArrayList<>();
         hostList.add(host);
@@ -199,7 +250,7 @@ public class HealthMonitoringSim {
         TimeKeeper tk = TimeKeeper.getInstance();
         int i = 1;
         for (AppLoop loop : app.getLoops()) {
-        	Integer loopId = tk.getLoopIdToTupleIds().get(loop);
+            Integer loopId = tk.getLoopIdToTupleIds().get(loop);
 
             Double avg = tk.getLoopIdToCurrentAverage().get(loopId);
             String name = (i == 1) ? "Normal (edge)" : "Abnormal (edge→fog)";
@@ -209,8 +260,10 @@ public class HealthMonitoringSim {
 
         double phoneEnergy = 0, hospitalEnergy = 0;
         for (FogDevice d : fogDevices) {
-            if (d.getName().equals("smartphone")) phoneEnergy += d.getEnergyConsumption();
-            if (d.getName().equals("hospital-server")) hospitalEnergy += d.getEnergyConsumption();
+            if (d.getName().equals("smartphone"))
+                phoneEnergy += d.getEnergyConsumption();
+            if (d.getName().equals("hospital-server"))
+                hospitalEnergy += d.getEnergyConsumption();
         }
         System.out.printf("Energy Smartphone (edge) : %.3f J%n", phoneEnergy);
         System.out.printf("Energy Hospital (fog)    : %.3f J%n", hospitalEnergy);
